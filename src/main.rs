@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-extern crate blueacro_driver_hv_bsp as hal;
+extern crate ba_driver_hv_bsp as hal;
 extern crate panic_halt;
 
 use cortex_m::peripheral::NVIC;

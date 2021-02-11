@@ -1,8 +1,8 @@
 [package]
-authors = ["Yann Ramin <atrus@stackworks.net>"]
+authors = ["Yann Ramin <github@theatr.us>"]
 edition = "2018"
 readme = "README.md"
-name = "same51demo"
+name = "ba-firmware-driver-hv"
 version = "0.1.0"
 
 [dependencies]
@@ -32,19 +32,13 @@ git = "https://github.com/atsamd-rs/atsamd"
 revision = "master"
 
 
-[dependencies.blueacro_driver_hv_bsp]
-path = "../blueacro_driver_hv_bsp"
+[dependencies.ba_driver_hv_bsp]
+path = "../blueacro-bsp/ba_driver_hv_bsp"
 features = ["default", "rt", "usb"]
-# Uncomment for the device example.
-# Update `memory.x`, set target to `thumbv7em-none-eabihf` in `.cargo/config`,
-# and then use `cargo build --examples device` to build it.
-# [dependencies.stm32f3]
-# features = ["stm32f303", "rt"]
-# version = "0.7.1"
 
 # this lets you use `cargo fix`!
 [[bin]]
-name = "same51demo"
+name = "ba-firmware-driver-hv"
 test = false
 bench = false
 
