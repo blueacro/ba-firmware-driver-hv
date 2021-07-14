@@ -25,9 +25,9 @@ usbd-serial = "0.1"
 
 [dependencies.atsamd-hal]
 features = ["same51j", "unproven"]
-git = "https://github.com/atsamd-rs/atsamd"
-revision = "master"
-#path = "../atsamd/hal"
+#git = "https://github.com/atsamd-rs/atsamd"
+#revision = "master"
+path = "../atsamd/hal"
 
 [dependencies.atsame51j]
 #path = "../atsamd/pac/atsame51j"
