@@ -2,6 +2,9 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 
+pub mod globals;
+pub mod init;
+
 extern crate alloc;
 extern crate ba_driver_hv_bsp as hal;
 extern crate panic_rtt_target;
@@ -14,27 +17,15 @@ use core::f32;
 use num_traits::float::FloatCore;
 
 use atsamd_hal::gpio::{PinId, PinMode};
-use cortex_m::peripheral::NVIC;
 use cortex_m_rt::{exception, ExceptionFrame};
 use hal::clock::GenericClockController;
 use hal::delay::Delay;
 use hal::entry;
-use hal::pac::{interrupt, CorePeripherals, Peripherals, SUPC};
+use hal::pac::{interrupt, CorePeripherals, Peripherals};
 use hal::prelude::*;
 use hal::pwm::{Channel, TCC0Pinout, Tcc0Pwm};
 use hal::rtc;
-use hal::usb::UsbBus;
-use hal::watchdog::{Watchdog, WatchdogTimeout};
 use rtt_target::{rprintln, rtt_init_print};
-
-use usb_device::bus::UsbBusAllocator;
-use usb_device::prelude::*;
-use usbd_serial::{SerialPort, USB_CLASS_CDC};
-
-static mut RTC: Option<rtc::Rtc<rtc::ClockMode>> = None;
-static mut USB_ALLOCATOR: Option<UsbBusAllocator<UsbBus>> = None;
-static mut USB_BUS: Option<UsbDevice<UsbBus>> = None;
-static mut USB_SERIAL: Option<SerialPort<UsbBus>> = None;
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -55,41 +46,6 @@ fn set_duty_cycle<A: PinId, B: PinMode>(pwm0: &mut Tcc0Pwm<A, B>, percent: f32) 
     }
 }
 
-fn init_usb(nvic: &mut NVIC, allocator: UsbBusAllocator<UsbBus>) {
-    let bus_allocator = unsafe {
-        USB_ALLOCATOR = Some(allocator);
-        USB_ALLOCATOR.as_ref().unwrap()
-    };
-
-    unsafe {
-        USB_SERIAL = Some(SerialPort::new(&bus_allocator));
-        USB_BUS = Some(
-            UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x27dd))
-                .manufacturer("Fake company")
-                .product("Serial port")
-                .serial_number("TEST")
-                .device_class(USB_CLASS_CDC)
-                .build(),
-        );
-    }
-    unsafe {
-        nvic.set_priority(interrupt::USB_OTHER, 1);
-        nvic.set_priority(interrupt::USB_TRCPT0, 1);
-        nvic.set_priority(interrupt::USB_TRCPT1, 1);
-        NVIC::unmask(interrupt::USB_OTHER);
-        NVIC::unmask(interrupt::USB_TRCPT0);
-        NVIC::unmask(interrupt::USB_TRCPT1);
-    }
-}
-
-fn spin_supc(supc: &SUPC) {
-    loop {
-        if supc.status.read().b33srdy().bit_is_set() {
-            break;
-        }
-    }
-}
-
 #[entry]
 fn main() -> ! {
     rtt_init_print!();
@@ -99,26 +55,7 @@ fn main() -> ! {
     unsafe { ALLOCATOR.init(start, size) }
 
     let mut peripherals = Peripherals::take().unwrap();
-
-    // Configure the supply supervisor
-    peripherals.SUPC.bod33.modify(|_, w| w.enable().clear_bit());
-    spin_supc(&peripherals.SUPC);
-    // Retain no backup ram in backup mode
-    peripherals.PM.bkupcfg.write(|w| w.bramcfg().off());
-    peripherals.SUPC.bbps.modify(|_, w| w.wakeen().set_bit());
-    peripherals.SUPC.bod33.modify(|_, w| unsafe {
-        w.action()
-            .bkup()
-            .level()
-            .bits(0x1cu8)
-            .runbkup()
-            .set_bit()
-            .vbatlevel()
-            .bits(0x10u8)
-    });
-    spin_supc(&peripherals.SUPC);
-    peripherals.SUPC.bod33.modify(|_, w| w.enable().set_bit());
-    spin_supc(&peripherals.SUPC);
+    init::init_supc(&mut peripherals);
 
     let mut core = CorePeripherals::take().unwrap();
     let mut clocks = GenericClockController::with_external_32kosc(
@@ -146,7 +83,7 @@ fn main() -> ! {
         .write(|w| w.dbgrun().set_bit());
     let rtc = rtc::Rtc::clock_mode_noreset(peripherals.RTC, 1024.hz(), &mut peripherals.MCLK);
     unsafe {
-        RTC = Some(rtc);
+        globals::RTC = Some(rtc);
     };
 
     let mut delay = Delay::new(core.SYST, &mut clocks);
@@ -161,7 +98,7 @@ fn main() -> ! {
         &mut peripherals.MCLK,
         &mut sets.port,
     );
-    init_usb(&mut core.NVIC, allocator);
+    init::init_usb(&mut core.NVIC, allocator);
 
     // Enable the PWM source for dimming
     let gclk = clocks.gclk0();
@@ -201,7 +138,7 @@ fn main() -> ! {
         count += 1;
         rprintln!("looped {}", count);
         unsafe {
-            let now = RTC.as_mut().map(|rtc| rtc.current_time());
+            let now = globals::RTC.as_mut().map(|rtc| rtc.current_time());
             rprintln!("now is {:?}", now);
         }
     }
@@ -209,8 +146,8 @@ fn main() -> ! {
 
 fn poll_usb() {
     unsafe {
-        USB_BUS.as_mut().map(|usb_dev| {
-            USB_SERIAL.as_mut().map(|serial| {
+        globals::USB_BUS.as_mut().map(|usb_dev| {
+            globals::USB_SERIAL.as_mut().map(|serial| {
                 usb_dev.poll(&mut [serial]);
                 let mut buf = [0u8; 64];
 
@@ -221,9 +158,9 @@ fn poll_usb() {
                         }
 
                         serial.write(&[c.clone()]).unwrap();
-                        let now = RTC.as_mut().map(|rtc| rtc.current_time());
+                        let now = globals::RTC.as_mut().map(|rtc| rtc.current_time());
                         let debug = format!("{:?}", now);
-                        serial.write(debug.as_bytes());
+                        serial.write(debug.as_bytes()).unwrap();
                         serial.write("\n".as_bytes()).unwrap();
                     }
                 };
