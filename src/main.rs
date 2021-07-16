@@ -4,19 +4,20 @@
 
 pub mod globals;
 pub mod init;
+pub mod proto;
 
 extern crate alloc;
 extern crate ba_driver_hv_bsp as hal;
 extern crate panic_rtt_target;
 
-use alloc::format;
-use alloc_cortex_m::CortexMHeap;
-use core::alloc::Layout;
-
 use core::f32;
 use num_traits::float::FloatCore;
 
+use alloc_cortex_m::CortexMHeap;
 use atsamd_hal::gpio::{PinId, PinMode};
+use atsamd_hal::timer::TimerCounter;
+use core::alloc::Layout;
+use cortex_m::peripheral::NVIC;
 use cortex_m_rt::{exception, ExceptionFrame};
 use hal::clock::GenericClockController;
 use hal::delay::Delay;
@@ -49,23 +50,12 @@ fn set_duty_cycle<A: PinId, B: PinMode>(pwm0: &mut Tcc0Pwm<A, B>, percent: f32) 
 #[entry]
 fn main() -> ! {
     rtt_init_print!();
-    // Initialize the allocator BEFORE you use it
-    let start = cortex_m_rt::heap_start() as usize;
-    let size = 1024; // in bytes
-    unsafe { ALLOCATOR.init(start, size) }
 
     let mut peripherals = Peripherals::take().unwrap();
+    // Initialize the supply controller
     init::init_supc(&mut peripherals);
 
     let mut core = CorePeripherals::take().unwrap();
-    let mut clocks = GenericClockController::with_external_32kosc(
-        peripherals.GCLK,
-        &mut peripherals.MCLK,
-        &mut peripherals.OSC32KCTRL,
-        &mut peripherals.OSCCTRL,
-        &mut peripherals.NVMCTRL,
-    );
-
     let pins = hal::Pins::new(peripherals.PORT);
     let mut sets = pins.split();
     let mut led = sets.led.led_green.into_open_drain_output(&mut sets.port);
@@ -73,6 +63,20 @@ fn main() -> ! {
     let mut led_blue = sets.led.led_blue.into_open_drain_output(&mut sets.port);
     let mut dim_en = sets.dim_en.into_push_pull_output(&mut sets.port);
     let fault = sets.fault;
+
+    // Perform startup, ensure pin configuration is as needed
+    led_blue.set_high().unwrap();
+    dim_en.set_low().unwrap();
+
+    // Start system clocks
+    let mut clocks = GenericClockController::with_external_32kosc(
+        peripherals.GCLK,
+        &mut peripherals.MCLK,
+        &mut peripherals.OSC32KCTRL,
+        &mut peripherals.OSCCTRL,
+        &mut peripherals.NVMCTRL,
+    );
+    let gclk = clocks.gclk0();
 
     // Configure the RTC. a 1024 Hz clock is configured for us when enabling our
     // main clock. Enable running in dbg mode to keep time
@@ -85,11 +89,15 @@ fn main() -> ! {
     unsafe {
         globals::RTC = Some(rtc);
     };
+    // Setup system allocator
+    unsafe { ALLOCATOR.init(cortex_m_rt::heap_start() as usize, 16384) }
+
+    // Configure a periodic PWM update timer
+    let tc2_tc3 = clocks.tc2_tc3(&gclk).unwrap();
+    let mut update_timer = TimerCounter::tc2_(&tc2_tc3, peripherals.TC2, &mut peripherals.MCLK);
+    update_timer.start(2.hz());
 
     let mut delay = Delay::new(core.SYST, &mut clocks);
-
-    led_blue.set_high().unwrap();
-    dim_en.set_low().unwrap();
 
     // Enable USB
     let allocator = sets.usb.init(
@@ -101,7 +109,6 @@ fn main() -> ! {
     init::init_usb(&mut core.NVIC, allocator);
 
     // Enable the PWM source for dimming
-    let gclk = clocks.gclk0();
     let mut pwm0 = Tcc0Pwm::new(
         &clocks.tcc0_tcc1(&gclk).unwrap(),
         20.khz(),
@@ -113,12 +120,9 @@ fn main() -> ! {
 
     delay.delay_ms(400u16);
     led_blue.set_low().unwrap();
-    // Disable enabling the boost converter to allow debugging
     dim_en.set_high().unwrap();
     delay.delay_ms(100u16);
 
-    //let mut wdt = Watchdog::new(peripherals.WDT);
-    //wdt.start(WatchdogTimeout::Cycles256 as u8);
 
     let mut count: u32 = 0;
     loop {
@@ -136,11 +140,6 @@ fn main() -> ! {
         set_duty_cycle(&mut pwm0, ((count + 30) % 200) as f32 / 200.0f32);
         led.set_low().unwrap();
         count += 1;
-        rprintln!("looped {}", count);
-        unsafe {
-            let now = globals::RTC.as_mut().map(|rtc| rtc.current_time());
-            rprintln!("now is {:?}", now);
-        }
     }
 }
 
@@ -159,8 +158,8 @@ fn poll_usb() {
 
                         serial.write(&[c.clone()]).unwrap();
                         let now = globals::RTC.as_mut().map(|rtc| rtc.current_time());
-                        let debug = format!("{:?}", now);
-                        serial.write(debug.as_bytes()).unwrap();
+                        //let debug = format!("{:?}", now);
+                        //serial.write(debug.as_bytes()).unwrap();
                         serial.write("\n".as_bytes()).unwrap();
                     }
                 };

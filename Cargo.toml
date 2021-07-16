@@ -8,20 +8,23 @@ version = "0.1.0"
 [dependencies]
 cortex-m = "0.6.4"
 cortex-m-rt = "0.6"
-cortex-m-semihosting = "0.3"
-#panic-halt = "0.2"
 panic-rtt-target = { version = "0.1", features = ["cortex-m"] }
-
-# Uncomment for the panic example.
-# panic-itm = "0.4.1"
+rtt-target = { version = "0.3", features = ["cortex-m"] }
 
 num-traits = { version = "0", default-features = false }
 
-# Uncomment for the allocator example.
 alloc-cortex-m = "0.4"
-rtt-target = { version = "0.3", features = ["cortex-m"] }
 usb-device = "0.2"
 usbd-serial = "0.1"
+
+[dependencies.postcard]
+version = "0.7"
+features = ["alloc"]
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+default-features = false
 
 [dependencies.atsamd-hal]
 features = ["same51j", "unproven"]
@@ -39,13 +42,12 @@ revision = "master"
 path = "../blueacro-bsp/ba_driver_hv_bsp"
 features = ["default", "rt", "usb"]
 
-# this lets you use `cargo fix`!
 [[bin]]
 name = "ba-firmware-driver-hv"
 test = false
 bench = false
 
 [profile.release]
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
-lto = true # better optimizations
+codegen-units = 1
+debug = true
+lto = true
