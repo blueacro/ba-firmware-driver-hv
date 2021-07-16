@@ -9,10 +9,10 @@ extern crate alloc;
 extern crate ba_driver_hv_bsp as hal;
 extern crate panic_rtt_target;
 
-use core::f32;
 use atsamd_hal::rtc::Datetime;
-use num_traits::float::FloatCore;
 use ba_postcard_proto as proto;
+use core::f32;
+use num_traits::float::Float;
 
 use alloc_cortex_m::CortexMHeap;
 use atsamd_hal::gpio::{PinId, PinMode};
@@ -124,9 +124,28 @@ fn main() -> ! {
     dim_en.set_high().unwrap();
     delay.delay_ms(100u16);
 
-
     let mut count: u32 = 0;
     loop {
+        let seconds_in_day = (24 * 60 * 60) as u32;
+        let sunrise = 8 * 60 * 60;
+        let sunset = (8 + 12) * 60 * 60;
+        let now = unsafe { globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap() };
+
+        let seconds_from_midnight =
+            ((now.hours as u32) * 60 * 60) + ((now.minutes as u32) * 60) + (now.seconds as u32);
+
+        rprintln!("seconds from midnight {}", seconds_from_midnight);
+
+        let pwm_value = if seconds_from_midnight > sunrise && seconds_from_midnight < sunset {
+            let angle_of_sun = ((seconds_from_midnight as f32) / (seconds_in_day as f32)) * core::f32::consts::PI;
+            rprintln!("angle of sun {}", angle_of_sun);
+            angle_of_sun.sin()
+        } else {
+            0.00f32
+        };
+        rprintln!("computed pwm_value of {}", pwm_value);
+        set_duty_cycle(&mut pwm0, pwm_value);
+
         delay.delay_ms(200u8);
         led.set_high().unwrap();
         match fault.is_high() {
@@ -138,7 +157,7 @@ fn main() -> ! {
             }
         }
         delay.delay_ms(200u8);
-        set_duty_cycle(&mut pwm0, ((count + 30) % 200) as f32 / 200.0f32);
+
         led.set_low().unwrap();
         count += 1;
     }
@@ -157,13 +176,17 @@ fn poll_usb() {
                         if let Ok(packet) = postcard::from_bytes_cobs::<proto::Command>(&mut buf) {
                             match packet {
                                 proto::Command::QueryTime => {
-                                    let now = globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap();
-                                    let out_packet = proto::Response::TimeIsNow(proto::TimeIsNow{
+                                    let now = globals::RTC
+                                        .as_mut()
+                                        .map(|rtc| rtc.current_time())
+                                        .unwrap();
+                                    let out_packet = proto::Response::TimeIsNow(proto::TimeIsNow {
                                         hours: now.hours,
                                         seconds: now.seconds,
-                                        minutes: now.minutes
+                                        minutes: now.minutes,
                                     });
-                                    let output = postcard::to_slice_cobs(&out_packet, &mut buf).unwrap();
+                                    let output =
+                                        postcard::to_slice_cobs(&out_packet, &mut buf).unwrap();
                                     serial.write(output).unwrap();
                                 }
                                 proto::Command::SetTime(time) => {
@@ -175,17 +198,23 @@ fn poll_usb() {
                                         month: 1u8,
                                         year: 1u8,
                                     };
-                                    let _ = globals::RTC.as_mut().map(|rtc| rtc.set_time(value)).unwrap();
-                                    let now = globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap();
-                                    let out_packet = proto::Response::TimeIsNow(proto::TimeIsNow{
+                                    let _ = globals::RTC
+                                        .as_mut()
+                                        .map(|rtc| rtc.set_time(value))
+                                        .unwrap();
+                                    let now = globals::RTC
+                                        .as_mut()
+                                        .map(|rtc| rtc.current_time())
+                                        .unwrap();
+                                    let out_packet = proto::Response::TimeIsNow(proto::TimeIsNow {
                                         hours: now.hours,
                                         seconds: now.seconds,
-                                        minutes: now.minutes
+                                        minutes: now.minutes,
                                     });
-                                    let output = postcard::to_slice_cobs(&out_packet, &mut buf).unwrap();
+                                    let output =
+                                        postcard::to_slice_cobs(&out_packet, &mut buf).unwrap();
                                     serial.write(output).unwrap();
-
-                                },
+                                }
                                 _ => (),
                             }
                         }
