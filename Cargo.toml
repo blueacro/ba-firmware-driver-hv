@@ -17,6 +17,9 @@ alloc-cortex-m = "0.4"
 usb-device = "0.2"
 usbd-serial = "0.1"
 
+[dependencies.ba-postcard-proto]
+path = "../ba-postcard-proto"
+
 [dependencies.postcard]
 version = "0.7"
 features = ["alloc"]

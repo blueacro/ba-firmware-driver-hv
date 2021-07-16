@@ -4,14 +4,15 @@
 
 pub mod globals;
 pub mod init;
-pub mod proto;
 
 extern crate alloc;
 extern crate ba_driver_hv_bsp as hal;
 extern crate panic_rtt_target;
 
 use core::f32;
+use atsamd_hal::rtc::Datetime;
 use num_traits::float::FloatCore;
+use ba_postcard_proto as proto;
 
 use alloc_cortex_m::CortexMHeap;
 use atsamd_hal::gpio::{PinId, PinMode};
@@ -151,16 +152,47 @@ fn poll_usb() {
                 let mut buf = [0u8; 64];
 
                 if let Ok(count) = serial.read(&mut buf) {
-                    for (i, c) in buf.iter().enumerate() {
-                        if i >= count {
-                            break;
-                        }
+                    // Check if we read a whole frame in this transaction
+                    if buf[count] == 0u8 {
+                        if let Ok(packet) = postcard::from_bytes_cobs::<proto::Command>(&mut buf) {
+                            match packet {
+                                proto::Command::QueryTime => {
+                                    let now = globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap();
+                                    let out_packet = proto::Response::TimeIsNow(proto::TimeIsNow{
+                                        hours: now.hours,
+                                        seconds: now.seconds,
+                                        minutes: now.minutes
+                                    });
+                                    let output = postcard::to_slice_cobs(&out_packet, &mut buf).unwrap();
+                                    serial.write(output).unwrap();
+                                }
+                                proto::Command::SetTime(time) => {
+                                    let value = Datetime {
+                                        seconds: time.seconds,
+                                        minutes: time.minutes,
+                                        hours: time.hours,
+                                        day: 1u8,
+                                        month: 1u8,
+                                        year: 1u8,
+                                    };
+                                    let _ = globals::RTC.as_mut().map(|rtc| rtc.set_time(value)).unwrap();
+                                    let now = globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap();
+                                    let out_packet = proto::Response::TimeIsNow(proto::TimeIsNow{
+                                        hours: now.hours,
+                                        seconds: now.seconds,
+                                        minutes: now.minutes
+                                    });
+                                    let output = postcard::to_slice_cobs(&out_packet, &mut buf).unwrap();
+                                    serial.write(output).unwrap();
 
-                        serial.write(&[c.clone()]).unwrap();
-                        let now = globals::RTC.as_mut().map(|rtc| rtc.current_time());
+                                },
+                                _ => (),
+                            }
+                        }
+                        //serial.write(&[c.clone()]).unwrap();
                         //let debug = format!("{:?}", now);
                         //serial.write(debug.as_bytes()).unwrap();
-                        serial.write("\n".as_bytes()).unwrap();
+                        //serial.write("\n".as_bytes()).unwrap();
                     }
                 };
             });
