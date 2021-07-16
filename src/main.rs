@@ -137,9 +137,12 @@ fn main() -> ! {
         rprintln!("seconds from midnight {}", seconds_from_midnight);
 
         let pwm_value = if seconds_from_midnight > sunrise && seconds_from_midnight < sunset {
-            let angle_of_sun = ((seconds_from_midnight as f32) / (seconds_in_day as f32)) * core::f32::consts::PI;
+            let angle_of_sun = (((seconds_from_midnight as f32) / (seconds_in_day as f32))
+                * 2f32
+                * core::f32::consts::PI)
+                + core::f32::consts::PI;
             rprintln!("angle of sun {}", angle_of_sun);
-            angle_of_sun.sin()
+            angle_of_sun.cos().clamp(0f32, 1f32)
         } else {
             0.00f32
         };
