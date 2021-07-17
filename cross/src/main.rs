@@ -133,7 +133,12 @@ fn main() -> ! {
             ((now.hours as u32) * 60 * 60) + ((now.minutes as u32) * 60) + (now.seconds as u32);
 
         let pwm_value = algo::pwm_from_time(seconds_from_midnight);
-        rprintln!("computed pwm_value of {}", pwm_value);
+        // Disable the boost converter if no output is produced to avoid leaking through the LEDs.
+        if pwm_value < 0.001 {
+            dim_en.set_low().unwrap();
+        } else {
+            dim_en.set_high().unwrap();
+        }
         set_duty_cycle(&mut pwm0, pwm_value);
 
         delay.delay_ms(200u8);
