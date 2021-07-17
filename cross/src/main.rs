@@ -9,6 +9,8 @@ extern crate alloc;
 extern crate ba_driver_hv_bsp as hal;
 extern crate panic_rtt_target;
 
+use algo;
+
 use atsamd_hal::rtc::Datetime;
 use ba_postcard_proto as proto;
 use core::f32;
@@ -18,8 +20,8 @@ use alloc_cortex_m::CortexMHeap;
 use atsamd_hal::gpio::{PinId, PinMode};
 use atsamd_hal::timer::TimerCounter;
 use core::alloc::Layout;
-use cortex_m::peripheral::NVIC;
 use cortex_m_rt::{exception, ExceptionFrame};
+use cortex_m::peripheral::NVIC;
 use hal::clock::GenericClockController;
 use hal::delay::Delay;
 use hal::entry;
@@ -124,28 +126,13 @@ fn main() -> ! {
     dim_en.set_high().unwrap();
     delay.delay_ms(100u16);
 
-    let mut count: u32 = 0;
     loop {
-        let seconds_in_day = (24 * 60 * 60) as u32;
-        let sunrise = 8 * 60 * 60;
-        let sunset = (8 + 12) * 60 * 60;
         let now = unsafe { globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap() };
 
         let seconds_from_midnight =
             ((now.hours as u32) * 60 * 60) + ((now.minutes as u32) * 60) + (now.seconds as u32);
 
-        rprintln!("seconds from midnight {}", seconds_from_midnight);
-
-        let pwm_value = if seconds_from_midnight > sunrise && seconds_from_midnight < sunset {
-            let angle_of_sun = (((seconds_from_midnight as f32) / (seconds_in_day as f32))
-                * 2f32
-                * core::f32::consts::PI)
-                + core::f32::consts::PI;
-            rprintln!("angle of sun {}", angle_of_sun);
-            angle_of_sun.cos().clamp(0f32, 1f32)
-        } else {
-            0.00f32
-        };
+        let pwm_value = algo::pwm_from_time(seconds_from_midnight);
         rprintln!("computed pwm_value of {}", pwm_value);
         set_duty_cycle(&mut pwm0, pwm_value);
 
@@ -162,9 +149,18 @@ fn main() -> ! {
         delay.delay_ms(200u8);
 
         led.set_low().unwrap();
-        count += 1;
     }
 }
+
+struct CommandProcessor {
+    buffer: [u8; 256],
+}
+
+impl CommandProcessor {
+    
+}
+
+
 
 fn poll_usb() {
     unsafe {

@@ -1,0 +1,58 @@
+[package]
+authors = ["Yann Ramin <github@theatr.us>"]
+edition = "2018"
+readme = "README.md"
+name = "ba-firmware-driver-hv"
+version = "0.1.0"
+
+[dependencies]
+cortex-m = "0.6"
+cortex-m-rt = "0.6"
+panic-rtt-target = { version = "0.1", features = ["cortex-m"] }
+rtt-target = { version = "0.3", features = ["cortex-m"] }
+
+num-traits = { version = "0", default-features = false, features = ["libm"] }
+
+alloc-cortex-m = "0.4"
+usb-device = "0.2"
+usbd-serial = "0.1"
+
+ba-postcard-proto = { path = "../../ba-postcard-proto" }
+postcard = { version = "0.7", features = ["alloc"] }
+serde = { version = "1", features = ["derive"], default-features = false }
+
+atsamd-hal = { features = ["same51j", "unproven"], path = "../../atsamd/hal" }
+#git = "https://github.com/atsamd-rs/atsamd"
+#revision = "master"
+atsame51j = { git = "https://github.com/atsamd-rs/atsamd", revision = "master" }
+
+
+ba_driver_hv_bsp = { path = "../../blueacro-bsp/ba_driver_hv_bsp", features = ["default", "rt", "usb"] }
+algo = { path = "../algo" }
+
+
+
+[[bin]]
+name = "ba-firmware-driver-hv"
+test = false
+bench = false
+doctest = false
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = true
+opt-level = 's'
+
+
+[profile.dev]
+codegen-units = 1
+incremental = false
+lto = 'fat'
+opt-level = 's'
+
+[profile.test]
+codegen-units = 1
+incremental = false
+lto = 'fat'
+opt-level = 's'
