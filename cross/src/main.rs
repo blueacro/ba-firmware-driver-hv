@@ -132,7 +132,7 @@ fn main() -> ! {
         let seconds_from_midnight =
             ((now.hours as u32) * 60 * 60) + ((now.minutes as u32) * 60) + (now.seconds as u32);
 
-        let pwm_value = algo::pwm_from_time(seconds_from_midnight);
+        let pwm_value = algo::pwm_from_time_shift(seconds_from_midnight, 2 * 60 * 60);
         // Disable the boost converter if no output is produced to avoid leaking through the LEDs.
         if pwm_value < 0.001 {
             dim_en.set_low().unwrap();
