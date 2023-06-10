@@ -119,12 +119,12 @@ fn main() -> ! {
         TCC0Pinout::Pb15(sets.dim.into_function_g(&mut sets.port)),
         &mut peripherals.MCLK,
     );
-    set_duty_cycle(&mut pwm0, 0.02f32);
+    set_duty_cycle(&mut pwm0, 0.1f32);
 
     delay.delay_ms(400u16);
     led_blue.set_low().unwrap();
     dim_en.set_high().unwrap();
-    delay.delay_ms(100u16);
+    delay.delay_ms(2000u16);
 
     loop {
         let now = unsafe { globals::RTC.as_mut().map(|rtc| rtc.current_time()).unwrap() };
@@ -132,17 +132,22 @@ fn main() -> ! {
         let seconds_from_midnight =
             ((now.hours as u32) * 60 * 60) + ((now.minutes as u32) * 60) + (now.seconds as u32);
 
-        let pwm_value = algo::pwm_from_time_shift(seconds_from_midnight, 2 * 60 * 60);
+        let pwm_value = match algo::pwm_from_time_shift(seconds_from_midnight, 2 * 60 * 60) {
+            value if value > 0f32 && value < 0.02 => 0.02,
+            value => value,
+        };
         // Disable the boost converter if no output is produced to avoid leaking through the LEDs.
-        if pwm_value < 0.001 {
+        if pwm_value == 0.0f32 {
             dim_en.set_low().unwrap();
+            led_blue.set_high().unwrap();
         } else {
+            led.set_high().unwrap();
             dim_en.set_high().unwrap();
+            // Wait before raising PWM when turning on
         }
+        delay.delay_ms(500u16);
         set_duty_cycle(&mut pwm0, pwm_value);
 
-        delay.delay_ms(200u8);
-        led.set_high().unwrap();
         match fault.is_high() {
             Ok(true) => {
                 led_red.set_high().unwrap();
@@ -151,9 +156,10 @@ fn main() -> ! {
                 led_red.set_low().unwrap();
             }
         }
-        delay.delay_ms(200u8);
-
+        led_blue.set_low().unwrap();
         led.set_low().unwrap();
+        delay.delay_ms(10u16);
+
     }
 }
 

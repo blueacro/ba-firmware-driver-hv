@@ -79,4 +79,20 @@ pub mod test {
             epsilon = 0.01f32
         );
     }
+
+    #[test]
+    fn test_three_after_shift() {
+        const TWO_HOURS: u32 = 2 * 60 * 60;
+
+        assert_relative_eq!(
+            pwm_from_time_shift(SUNRISE + TWO_HOURS + (60 * 60 * 3), TWO_HOURS as i32),
+            0.7f32,
+            epsilon = 0.01f32
+        );
+        assert_relative_eq!(
+            pwm_from_time_shift(SUNSET + TWO_HOURS - (60 * 60 * 3), TWO_HOURS as i32),
+            0.7f32,
+            epsilon = 0.01f32
+        );
+    }
 }
